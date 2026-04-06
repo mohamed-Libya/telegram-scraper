@@ -41,8 +41,11 @@ async def main():
         has_dollar = "الدولار" in message_text
         has_signature = "@lydollar" in message_text
         
-        if has_green_circle and has_today and has_dollar and has_signature:
-            print("✅ النمط متطابق. جاري الإرسال...")
+        # الشرط الجديد: التأكد إن الرسالة لا تحتوي على المركزي نهائياً
+        is_not_central = "المركزي" not in message_text and "مركزي" not in message_text
+        
+        if has_green_circle and has_today and has_dollar and has_signature and is_not_central:
+            print("✅ النمط متطابق (سوق موازي). جاري الإرسال...")
             current_time = datetime.datetime.now().strftime("%Y-%m-%d %I:%M %p")
             
             payload = {"price_data": message_text, "post_time": current_time}
@@ -52,7 +55,7 @@ async def main():
             except Exception as e:
                 print(f"❌ حدث خطأ أثناء الإرسال: {e}")
         else:
-            print("🚫 الرسالة تم تجاهلها (لا تطابق النمط).")
+            print("🚫 الرسالة تم تجاهلها (لا تطابق النمط أو تابعة للمركزي).")
 
     print("🤖 جاري الاتصال بتليجرام (السحابة)...")
     await client.start()
