@@ -3,7 +3,7 @@ from telethon.sessions import StringSession
 import requests
 import asyncio
 import datetime
-from flask import Flask
+from flask import Flask, jsonify  # 💡 إضافة jsonify لتحويل البيانات لصيغة JSON
 from threading import Thread
 import os
 
@@ -15,24 +15,40 @@ WEBHOOK_URL = 'https://flow.sokt.io/func/scriupVsntDz'
 TARGET_CHANNEL = '@lydollar'
 # ===============================
 
-# 1. إعداد "خادم الويب الوهمي" (Flask) باش السكريبت يقعد فايق 24 ساعة
+# 💡 1. متغير جديد بمثابة "ذاكرة مؤقتة" يحفظ آخر سعر يتم سحبه
+latest_price_data = {
+    "currency": "USD",
+    "price_text": "في انتظار أول تحديث للسعر من السوق...",
+    "time": "N/A",
+    "status": "waiting"
+}
+
+# 2. إعداد "خادم الويب الوهمي" (Flask) باش السكريبت يقعد فايق 24 ساعة
 app = Flask(__name__)
 
 @app.route('/')
 def keep_alive():
-    return "السيرفر يخدم وأموره تمام! 🚀"
+    return "السيرفر يخدم وأموره تمام! 🚀 (مسار الـ API هو: /api/price)"
+
+# 💡 3. هذا هو "الـ API" الجديد اللي حيكلمه تطبيق الأندرويد بتاعك
+@app.route('/api/price')
+def get_price_api():
+    # الفانكشن هذي تاخذ المتغير وتحوله لملف JSON تلقائياً
+    return jsonify(latest_price_data)
 
 def run_flask():
     # Render يعطينا بورت معين لازم نستخدموه، لو مفيش حيستخدم 10000
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 
-# 2. إعداد سكريبت التليجرام الأساسي
+# 4. إعداد سكريبت التليجرام الأساسي
 async def main():
     client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
     @client.on(events.NewMessage(chats=TARGET_CHANNEL))
     async def my_event_handler(event):
+        global latest_price_data  # 💡 باش نقدروا نحدثوا الذاكرة من داخل الفانكشن
+        
         message_text = event.message.message
         print(f"\n📩 رسالة جديدة من {TARGET_CHANNEL}:\n{message_text}\n")
         
@@ -41,17 +57,23 @@ async def main():
         has_dollar = "الدولار" in message_text
         has_signature = "@lydollar" in message_text
         
-        # الشرط الجديد: التأكد إن الرسالة لا تحتوي على المركزي نهائياً
+        # الشرط: التأكد إن الرسالة لا تحتوي على المركزي نهائياً
         is_not_central = "المركزي" not in message_text and "مركزي" not in message_text
         
         if has_green_circle and has_today and has_dollar and has_signature and is_not_central:
-            print("✅ النمط متطابق (سوق موازي). جاري الإرسال...")
+            print("✅ النمط متطابق (سوق موازي). جاري الإرسال وتحديث الـ API...")
             current_time = datetime.datetime.now().strftime("%Y-%m-%d %I:%M %p")
+            
+            # 💡 تحديث الذاكرة المؤقتة بالسعر الجديد باش تطلع في تطبيق الموبايل
+            latest_price_data["price_text"] = message_text
+            latest_price_data["time"] = current_time
+            latest_price_data["status"] = "updated"
             
             payload = {"price_data": message_text, "post_time": current_time}
             try:
+                # إرسال البيانات للفيسبوك عن طريق Viasocket
                 response = requests.post(WEBHOOK_URL, json=payload)
-                print(f"🚀 تم الإرسال! (حالة السيرفر: {response.status_code})")
+                print(f"🚀 تم الإرسال للفيسبوك! (حالة السيرفر: {response.status_code})")
             except Exception as e:
                 print(f"❌ حدث خطأ أثناء الإرسال: {e}")
         else:
@@ -64,14 +86,14 @@ async def main():
 
 if __name__ == '__main__':
     import sys
-    # 1. حل مشكلة الويندوز مع البايثون
+    # حل مشكلة الويندوز مع البايثون
     if sys.platform == 'win32':
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         
-    # 2. نشغلوا خادم الـ Flask في مسار (Thread) منفصل
+    # نشغلوا خادم الـ Flask في مسار (Thread) منفصل
     Thread(target=run_flask).start()
     
-    # 3. نشغلوا التليجرام بالطريقة الحديثة
+    # نشغلوا التليجرام بالطريقة الحديثة
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
